@@ -11,19 +11,15 @@ def create_company_dropdown(conn):
         .sort_values(key=lambda s: s.str.lower())
         .tolist()
     )
-
-    # search box with icon — filters by prefix (starts with)
     query = st.text_input("🔍 اكتب بداية اسم الشركة", value="", placeholder="اكتب بداية اسم الشركة ...", key="company_search")
     if query:
         q = str(query).strip().lower()
         filtered = [c for c in companies if c.lower().startswith(q)]
     else:
         filtered = companies
-
     if not filtered:
         st.info(f"لا توجد شركات تبدأ بـ «{query}»") if query else st.info("لا توجد شركات.")
         return None
-
     return st.selectbox("اختر الشركة", options=filtered, index=0 if filtered else None, placeholder="— اختر —")
 
 def create_project_dropdown(conn, company_name: str):
@@ -37,11 +33,7 @@ def create_type_dropdown():
     # إضافة "تقرير مالي" كخيار جديد يفعّل عرض الـ Views
     display_to_key = {
         "تقرير مالي": "financial_report",
-        "العقود": "contract",
-        "خطابات الضمان": "guarantee",
-        "المستخلصات": "invoice",
-        "الشيكات / التحويلات": "checks",
-        "شهادة تامينات": "social_insurance_certificate",  # <-- note space: "شهادة تامينات"
+        "عقود ومناقصات": "contracts_bids",
     }
     display_list = list(display_to_key.keys())
     display_choice = st.selectbox("اختر نوع البيانات", options=display_list, index=0 if display_list else None, placeholder="— اختر —")
