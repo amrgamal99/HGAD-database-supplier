@@ -1,0 +1,10 @@
+streamlit
+pandas
+supabase
+python-dotenv
+xlsxwriter
+openpyxl
+reportlab
+arabic-reshaper
+python-bidi
+
