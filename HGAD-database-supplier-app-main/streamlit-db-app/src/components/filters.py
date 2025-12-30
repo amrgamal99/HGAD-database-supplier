@@ -1,6 +1,24 @@
 import streamlit as st
 import pandas as pd
 from db.connection import fetch_companies, fetch_projects_by_company
+import supabase
+def create_raw_material_dropdown(conn):
+    # Fetch unique raw materials from suppliers table
+    try:
+        # Use the supabase client directly to fetch unique raw materials
+        resp = conn.table("suppliers").select("مواد اوليه").execute()
+        df = pd.DataFrame(resp.data or [])
+        raw_materials = (
+            df["مواد اوليه"].dropna().drop_duplicates().tolist()
+            if not df.empty and "مواد اوليه" in df.columns else []
+        )
+        if not raw_materials:
+            st.info("لا توجد مواد أولية متاحة.")
+            return None
+        return st.selectbox("اختر نوع المادة الأولية", options=raw_materials, index=0 if raw_materials else None, placeholder="— اختر —")
+    except Exception:
+        st.info("حدث خطأ أثناء جلب المواد الأولية.")
+        return None
 
 def create_company_dropdown(conn):
     companies_df = fetch_companies(conn)
@@ -29,11 +47,11 @@ def create_project_dropdown(conn, company_name: str):
     projects = projects_df["اسم المشروع"].tolist()
     return st.selectbox("اختر المشروع", options=projects, index=0 if projects else None, placeholder="— اختر —")
 
+
 def create_type_dropdown():
-    # إضافة "تقرير مالي" كخيار جديد يفعّل عرض الـ Views
     display_to_key = {
+        "فواتير": "invoices",
         "تقرير مالي": "financial_report",
-        "عقود ومناقصات": "contracts_bids",
     }
     display_list = list(display_to_key.keys())
     display_choice = st.selectbox("اختر نوع البيانات", options=display_list, index=0 if display_list else None, placeholder="— اختر —")
@@ -56,4 +74,3 @@ def create_date_range():
     d_from = pd.to_datetime(d_from).date() if d_from else None
     d_to = pd.to_datetime(d_to).date() if d_to else None
     return d_from, d_to
-# comment to test git
