@@ -87,142 +87,33 @@ def _get_company_and_project_ids(supabase: Client, company_name: str, project_na
         st.caption(f"⚠️ _get_company_and_project_ids error: {e}")
         return None, None
 
-# البيانات الخام (للأنواع الأخرى)
-def fetch_data(supabase: Client, company_name: str, project_name: str, target_table: str) -> pd.DataFrame:
+def fetch_suppliers_by_raw_material(supabase: Client, raw_material: str) -> pd.DataFrame:
+    """Fetch suppliers filtered by raw material (مواد اوليه)"""
     try:
-        company_id, project_id = _get_company_and_project_ids(supabase, company_name, project_name)
+        resp = supabase.table("suppliers").select("id, اسم المورد, مواد اوليه").eq("مواد اوليه", raw_material).execute()
+        df = pd.DataFrame(resp.data or [])
+        return df
+    except Exception:
+        return pd.DataFrame(columns=["id", "اسم المورد", "مواد اوليه"])
 
-        if not company_id or not project_id:
-            return pd.DataFrame()
-
-
-        tbl = target_table.lower()
-        if tbl == "projects":
-            resp = (
-                supabase.table("projects")
-                .select("*")
-                .eq("id", project_id)
-                .single()
-                .execute()
+def fetch_companies_by_supplier(supabase: Client, supplier_name: str = None, raw_material: str = None) -> pd.DataFrame:
+    """Fetch companies filtered by supplier and/or raw material (if needed)"""
+    # This assumes a relationship exists between companies and suppliers via projects/invoices
+    try:
+        if supplier_name:
+            # Join invoices, companies, suppliers to get companies for a supplier
+            query = (
+                supabase.rpc(
+                    "custom_companies_by_supplier",
+                    {"supplier_name": supplier_name, "raw_material": raw_material}
+                )
             )
-            data = [resp.data] if resp.data else []
-        elif tbl in ["guarantee", "invoices", "checks", "social_insurance_certificate"]:
-            resp = (
-                supabase.table(tbl)
-                .select("*")
-                .eq("company_id", company_id)
-                .eq("project_id", project_id)
-                .execute()
-            )
-            data = resp.data or []
+            resp = query.execute()
+            df = pd.DataFrame(resp.data or [])
+            return df
         else:
-            st.error("نوع البيانات غير صالح.")
-            return pd.DataFrame()
+            # fallback to all companies
+            return fetch_companies(supabase)
+    except Exception:
+        return pd.DataFrame(columns=["id", "اسم الشركة"])
 
-        df = pd.DataFrame(data)
-        if not df.empty:
-            df.drop(columns=[c for c in df.columns if c.lower().endswith("id")],
-                    inplace=True, errors="ignore")
-
-        # format date-like columns
-        for col in df.columns:
-            if "تاريخ" in col or "إصدار" in col:
-                try:
-                    df[col] = pd.to_datetime(df[col]).dt.strftime("%Y-%m-%d")
-                except Exception:
-                    pass
-
-        # If it's the social_insurance_certificate table, normalize the "اسم الشهادة" values
-        if tbl == "social_insurance_certificate" and "اسم الشهادة" in df.columns:
-            try:
-                def normalize_name(val):
-                    if pd.isna(val):
-                        return "شهاده تامينات جاري"
-                    s = str(val).strip()
-                    # find first number (Latin or Arabic-Indic) anywhere in the string
-                    m = re.search(r'([0-9\u0660-\u0669\u06F0-\u06F9]+)', s)
-                    if m:
-                        num = m.group(1)
-                        # place the number after "جاري" for clarity
-                        return f"شهاده تامينات جاري {num}"
-                    # fallback to plain label when no number found
-                    return "شهاده تامينات جاري"
-
-                df["اسم الشهادة"] = df["اسم الشهادة"].apply(normalize_name)
-            except Exception:
-                pass
-
-        # Sort by the first date-like column (old → new) for invoice/checks/social_insurance_certificate
-        if tbl in ["invoice", "checks", "social_insurance_certificate"] and not df.empty:
-            date_cols = [c for c in df.columns if "تاريخ" in c or "إصدار" in c]
-            if date_cols:
-                try:
-                    df = df.sort_values(by=date_cols[0], ascending=True, na_position="last")
-                except Exception:
-                    pass
-
-        return df
-    except Exception as e:
-        st.caption(f"⚠️ fetch_data error: {e}")
-        return pd.DataFrame()
-
-# === NEW: جلب v_financial_flow مع فلاتر التاريخ ===
-def fetch_financial_flow_view(supabase: Client, company_name: str, project_name: str,
-                              date_from=None, date_to=None) -> pd.DataFrame:
-    company_id, project_id = _get_company_and_project_ids(supabase, company_name, project_name)
-    if not company_id or not project_id:
-        return pd.DataFrame()
-
-    try:
-
-        q = supabase.table("v_financial_flow").select(
-            'company_id, project_id, "التاريخ", "نوع العملية", "اسم المستخلص", '
-            '"قيمة المستخلص قبل الخصومات", "صافي المستحق بعد الخصومات", '
-            '"رقم الشيك", "البنك", "قيمة الشيك", "الغرض من إصدار الشيك", "المتبقي"'
-        ).eq("project_id", project_id)
-
-        # استخدم filter مع أسماء الأعمدة العربية
-        if date_from:
-            q = q.filter('التاريخ', 'gte', str(date_from))
-        if date_to:
-            q = q.filter('التاريخ', 'lte', str(date_to))
-
-        resp = q.order("التاريخ", desc=False).execute()
-        df = pd.DataFrame(resp.data or [])
-        # تنسيقات
-        if not df.empty:
-            for col in ["التاريخ"]:
-                try:
-                    df[col] = pd.to_datetime(df[col]).dt.strftime("%Y-%m-%d")
-                except Exception:
-                    pass
-        return df
-    except Exception as e:
-        st.caption(f"⚠️ fetch_financial_flow_view error: {e}")
-        return pd.DataFrame()
-
-# === NEW: جلب v_contract_summary كسطر ملخّص واحد للمشروع ===
-def fetch_contract_summary_view(supabase: Client, company_name: str, project_name: str) -> pd.DataFrame:
-    company_id, project_id = _get_company_and_project_ids(supabase, company_name, project_name)
-    if not company_id or not project_id:
-        return pd.DataFrame()
-    try:
-        # نختار بالاسم والتعاقد لضمان صف واحد
-        resp = (
-            supabase.table("v_contract_summary")
-            .select('"اسم المشروع","تاريخ التعاقد","قيمة التعاقد","حجم الاعمال المنفذة",'
-                '"نسبة الاعمال المنفذة","الدفعه المقدمه","التحصيلات","المستحق صرفه"')
-            .filter('اسم المشروع', 'eq', project_name)
-            .execute()
-        )
-        df = pd.DataFrame(resp.data or [])
-        if not df.empty:
-            if "تاريخ التعاقد" in df.columns:
-                try:
-                    df["تاريخ التعاقد"] = pd.to_datetime(df["تاريخ التعاقد"]).dt.strftime("%Y-%m-%d")
-                except Exception:
-                    pass
-        return df.head(1)  # بطاقة واحدة
-    except Exception as e:
-        st.caption(f"⚠️ fetch_contract_summary_view error: {e}")
-        return pd.DataFrame()

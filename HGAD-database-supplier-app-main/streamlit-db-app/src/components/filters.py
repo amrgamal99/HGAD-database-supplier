@@ -1,17 +1,15 @@
 import streamlit as st
 import pandas as pd
 from db.connection import fetch_companies, fetch_projects_by_company
+import pandas as pd
 import supabase
+
 def create_raw_material_dropdown(conn):
     # Fetch unique raw materials from suppliers table
     try:
-        # Use the supabase client directly to fetch unique raw materials
         resp = conn.table("suppliers").select("مواد اوليه").execute()
         df = pd.DataFrame(resp.data or [])
-        raw_materials = (
-            df["مواد اوليه"].dropna().drop_duplicates().tolist()
-            if not df.empty and "مواد اوليه" in df.columns else []
-        )
+        raw_materials = df["مواد اوليه"].dropna().drop_duplicates().tolist() if not df.empty else []
         if not raw_materials:
             st.info("لا توجد مواد أولية متاحة.")
             return None
