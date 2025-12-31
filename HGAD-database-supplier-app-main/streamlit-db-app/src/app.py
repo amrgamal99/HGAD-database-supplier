@@ -205,23 +205,6 @@ button[title="Collapse sidebar"],
   background: var(--panel-2);
 }
 
-.fin-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border: 1px dashed rgba(37,99,235,.35);
-  border-radius: 16px;
-  padding: 16px 18px;
-  margin: 8px 0 14px;
-  background: linear-gradient(180deg, #0b1220, #0e1424);
-}
-
-.fin-head .line {
-  font-size: 22px;
-  font-weight: 900;
-  color: var(--text);
-}
-
 .date-box {
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -252,25 +235,6 @@ button[title="Collapse sidebar"],
   font-weight: 700;
 }
 
-[data-testid="stDataFrame"] thead tr th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: #132036;
-  color: #e7eefc;
-  font-weight: 800;
-  font-size: 15px;
-  border-bottom: 1px solid var(--line);
-}
-
-[data-testid="stDataFrame"] div[role="row"] {
-  font-size: 14.5px;
-}
-
-[data-testid="stDataFrame"] div[role="row"]:nth-child(even) {
-  background: rgba(255,255,255,.03);
-}
-
 .hsec {
   color: #e7eefc;
   font-weight: 900;
@@ -278,49 +242,67 @@ button[title="Collapse sidebar"],
   font-size: 22px;
 }
 
-.fin-panel {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-top: 10px;
+/* Beautiful full-width table styling */
+.dataframe-container table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 0 !important;
+  font-size: 14px !important;
 }
 
-.fin-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  border-radius: 14px;
-  overflow: hidden;
+.dataframe-container thead {
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 10 !important;
 }
 
-.fin-table th, .fin-table td {
-  border: 1px solid var(--line);
-  padding: 12px;
-  font-size: 14.5px;
-  white-space: normal;
-  word-wrap: break-word;
+.dataframe-container thead th {
+  padding: 14px 12px !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  text-align: center !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  font-size: 15px !important;
+  white-space: nowrap !important;
 }
 
-.fin-table tr:hover td {
-  background: #111a2d;
-  transition: background .2s ease;
+.dataframe-container tbody tr {
+  transition: all 0.2s ease !important;
 }
 
-.fin-table td.value {
-  background: #0f1a30;
-  font-weight: 800;
-  text-align: center;
-  width: 34%;
+.dataframe-container tbody tr:nth-child(even) {
+  background: rgba(255,255,255,0.02) !important;
 }
 
-.fin-table td.label {
-  background: #0d1628;
-  font-weight: 700;
-  text-align: right;
-  width: 66%;
+.dataframe-container tbody tr:hover {
+  background: #1a2744 !important;
+  transform: scale(1.001) !important;
 }
 
-.hsec, .fin-head, h1, h3 {
+.dataframe-container tbody td {
+  padding: 12px !important;
+  border: 1px solid var(--line) !important;
+  text-align: center !important;
+  color: var(--text) !important;
+}
+
+.dataframe-container tbody td a {
+  color: #60a5fa !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  transition: all 0.2s ease !important;
+}
+
+.dataframe-container tbody td a:hover {
+  color: #93c5fd !important;
+  text-decoration: underline !important;
+}
+
+.hsec, h1, h3 {
   text-align: right !important;
   direction: rtl !important;
 }
@@ -378,15 +360,40 @@ def make_excel_bytes(
     sheet_name: str,
     title_line: str
 ) -> Optional[bytes]:
-    """إنشاء ملف Excel مع تنسيق"""
+    """إنشاء ملف Excel مع تنسيق وروابط قابلة للنقر"""
     engine = _pick_excel_engine()
     if engine is None:
         return None
     
     buf = BytesIO()
     
-    with pd.ExcelWriter(buf, engine=engine) as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+    # Check if we have xlsxwriter (supports hyperlinks better)
+    if engine == "xlsxwriter":
+        with pd.ExcelWriter(buf, engine=engine) as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+            
+            workbook = writer.book
+            worksheet = writer.sheets[sheet_name[:31]]
+            
+            # Add hyperlink format
+            link_format = workbook.add_format({
+                'font_color': 'blue',
+                'underline': 1
+            })
+            
+            # Find the column index for رابط نسخة الفاتورة
+            if "رابط نسخة الفاتورة" in df.columns:
+                link_col_idx = df.columns.get_loc("رابط نسخة الفاتورة")
+                
+                # Add hyperlinks for each row
+                for row_idx, url in enumerate(df["رابط نسخة الفاتورة"], start=1):
+                    if pd.notna(url) and str(url).strip():
+                        url_str = str(url).strip()
+                        worksheet.write_url(row_idx, link_col_idx, url_str, link_format, string="عرض الفاتورة")
+    else:
+        # Fallback for openpyxl
+        with pd.ExcelWriter(buf, engine=engine) as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
     
     buf.seek(0)
     return buf.getvalue()
@@ -512,13 +519,24 @@ def _pdf_table(
         cells = []
         for c in df.columns:
             sval = "" if pd.isna(r[c]) else str(r[c])
-            is_ar = looks_arabic(sval)
-            cells.append(
-                Paragraph(
-                    shape_arabic(sval) if is_ar else sval,
-                    cell_rtl if is_ar else cell_ltr
+            
+            # Check if this is a URL column and has a valid URL
+            if c == "رابط نسخة الفاتورة" and sval and sval.strip() and sval.startswith("http"):
+                # Create clickable link in PDF
+                link_text = "عرض الفاتورة"
+                link_html = f'<link href="{sval}" color="blue"><u>{link_text}</u></link>'
+                cells.append(
+                    Paragraph(link_html, cell_rtl)
                 )
-            )
+            else:
+                # Regular cell
+                is_ar = looks_arabic(sval)
+                cells.append(
+                    Paragraph(
+                        shape_arabic(sval) if is_ar else sval,
+                        cell_rtl if is_ar else cell_ltr
+                    )
+                )
         rows.append(cells)
     
     # Calculate column widths
@@ -726,11 +744,32 @@ def main():
         remaining_cols = [col for col in df_display.columns if col not in ordered_cols]
         df_display = df_display[ordered_cols + remaining_cols]
     
+    # Reorder columns for invoices
+    if type_key == "invoices":
+        # Define desired order for invoices
+        desired_order = [
+            "مواد اوليه",
+            "اسم المورد",
+            "رقم الفاتورة",
+            "تاريخ الفاتورة",
+            "المبلغ",
+            "الكمية",
+            "رابط نسخة الفاتورة"
+        ]
+        
+        # Reorder columns that exist in df_display
+        ordered_cols = [col for col in desired_order if col in df_display.columns]
+        # Add any remaining columns not in desired_order
+        remaining_cols = [col for col in df_display.columns if col not in ordered_cols]
+        df_display = df_display[ordered_cols + remaining_cols]
+    
     # Convert links to clickable HTML if column exists
     df_html = convert_links_to_html(df_display)
     
-    # Display with HTML rendering for links
+    # Display with HTML rendering for links in a styled container
+    st.markdown('<div class="dataframe-container">', unsafe_allow_html=True)
     st.write(df_html.to_html(escape=False, index=False), unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -743,13 +782,19 @@ def main():
         date_to
     )
     
-    # Download Buttons
+    # Download Buttons (Excel and PDF only)
     st.markdown("### 📥 تنزيل البيانات")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
-        xlsx_bytes = make_excel_bytes(df_display, "البيانات", title_export)
+        # Prepare Excel with clickable links
+        df_excel = df_display.copy()
+        if "رابط نسخة الفاتورة" in df_excel.columns:
+            # Keep actual URLs for Excel (Excel supports hyperlinks)
+            pass
+        
+        xlsx_bytes = make_excel_bytes(df_excel, "البيانات", title_export)
         if xlsx_bytes:
             st.download_button(
                 "📊 تنزيل Excel",
@@ -759,15 +804,7 @@ def main():
             )
     
     with col2:
-        csv_bytes = make_csv_utf8(df_display)
-        st.download_button(
-            "📄 تنزيل CSV",
-            csv_bytes,
-            file_name=safe_filename(f"{display_name}_{company_name}_{project_name}.csv"),
-            mime="text/csv"
-        )
-    
-    with col3:
+        # Prepare PDF with URLs shown as text
         pdf_df = format_numbers_for_display(df_display)
         pdf_bytes = make_pdf_bytes(pdf_df, title_export)
         st.download_button(
