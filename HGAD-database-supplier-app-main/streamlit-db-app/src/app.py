@@ -648,7 +648,7 @@ def main():
     
     # Supplier Filter
     st.markdown("---")
-    selected_suppliers = create_supplier_multiselect(conn)
+    selected_suppliers = create_supplier_multiselect(conn, company_name, project_name, raw_material)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -688,27 +688,10 @@ def main():
             st.info("🔍 لا توجد نتائج بعد تطبيق البحث.")
             return
     
-    # Display Header
-    supplier_info = ""
-    if selected_suppliers and len(selected_suppliers) > 0:
-        supplier_info = f'&nbsp;&nbsp;|&nbsp;&nbsp;<strong>الموردين:</strong> {", ".join(selected_suppliers)}'
-    
-    st.markdown(f"""
-<div class="fin-head">
-    <div class="line">
-        <strong>الشركة:</strong> {company_name}
-        &nbsp;&nbsp;|&nbsp;&nbsp;
-        <strong>المشروع:</strong> {project_name}
-        {f'&nbsp;&nbsp;|&nbsp;&nbsp;<strong>المادة:</strong> {raw_material}' if raw_material != "الكل" else ''}
-        {supplier_info}
-        &nbsp;&nbsp;|&nbsp;&nbsp;
-        <strong>{display_name}</strong>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    # Display simple header
+    st.markdown(f'<h3 class="hsec">📊 {display_name}</h3>', unsafe_allow_html=True)
     
     # Display Data
-    st.markdown(f'<h3 class="hsec">{display_name}</h3>', unsafe_allow_html=True)
     st.markdown('<div class="card soft">', unsafe_allow_html=True)
     
     # Remove ID columns for display
@@ -716,6 +699,32 @@ def main():
         columns=[c for c in df.columns if "id" in c.lower()],
         errors="ignore"
     )
+    
+    # Remove columns where ALL values are NaN
+    df_display = df_display.dropna(axis=1, how='all')
+    
+    # Reorder columns for financial report
+    if type_key == "financial_report":
+        # Define desired order
+        desired_order = [
+            "مواد اوليه",
+            "اسم المورد",
+            "رقم الفاتورة",
+            "تاريخ الفاتورة",
+            "المبلغ",
+            "كميه زجاج متر مربع",
+            "كميه المونيوم طن",
+            "كميه اكسسوار",
+            "كميه ستيل طن",
+            "مجموع الكمية لكل مشروع ومورد",
+            "مجموع المبلغ لكل مشروع ومورد"
+        ]
+        
+        # Reorder columns that exist in df_display
+        ordered_cols = [col for col in desired_order if col in df_display.columns]
+        # Add any remaining columns not in desired_order
+        remaining_cols = [col for col in df_display.columns if col not in ordered_cols]
+        df_display = df_display[ordered_cols + remaining_cols]
     
     # Convert links to clickable HTML if column exists
     df_html = convert_links_to_html(df_display)

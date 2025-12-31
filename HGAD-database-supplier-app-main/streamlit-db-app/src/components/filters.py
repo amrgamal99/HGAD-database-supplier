@@ -76,18 +76,55 @@ def create_project_dropdown(conn, company_name: str) -> Optional[str]:
 
 
 # =========================================================
-# Supplier Multiselect Filter
+# Supplier Multiselect Filter (filtered by company, project, material)
 # =========================================================
 
-def create_supplier_multiselect(conn) -> List[str]:
-    """إنشاء فلتر متعدد الاختيار للموردين"""
+def create_supplier_multiselect(conn, company_name: str, project_name: str, raw_material: str = None) -> List[str]:
+    """إنشاء فلتر متعدد الاختيار للموردين حسب الشركة والمشروع والمادة"""
     try:
-        suppliers_df = fetch_all_suppliers(conn)
-        
-        if suppliers_df.empty or "اسم المورد" not in suppliers_df.columns:
-            st.info("لا يوجد موردون متاحون.")
+        if not company_name or not project_name:
             return []
         
+        # Get company and project IDs
+        company_resp = conn.table("companies").select("id").eq("اسم الشركة", company_name).single().execute()
+        if not company_resp.data:
+            return []
+        company_id = company_resp.data["id"]
+        
+        project_resp = conn.table("projects").select("id").eq("company_id", company_id).eq("اسم المشروع", project_name).single().execute()
+        if not project_resp.data:
+            return []
+        project_id = project_resp.data["id"]
+        
+        # Get suppliers from invoices for this company and project
+        query = conn.table("invoices").select("supplier_id").eq("company_id", company_id).eq("project_id", project_id)
+        invoices_resp = query.execute()
+        
+        if not invoices_resp.data:
+            st.info("لا يوجد موردون لهذه الشركة والمشروع.")
+            return []
+        
+        supplier_ids = list(set([inv["supplier_id"] for inv in invoices_resp.data if inv.get("supplier_id")]))
+        
+        if not supplier_ids:
+            return []
+        
+        # Get supplier details
+        suppliers_resp = conn.table("suppliers").select("id, اسم المورد, مواد اوليه").in_("id", supplier_ids).execute()
+        suppliers_df = pd.DataFrame(suppliers_resp.data or [])
+        
+        if suppliers_df.empty:
+            return []
+        
+        # Filter by raw material if specified
+        if raw_material and raw_material != "الكل":
+            suppliers_df = suppliers_df[suppliers_df["مواد اوليه"] == raw_material]
+        
+        if suppliers_df.empty:
+            st.info(f"لا يوجد موردون لهذه المادة: {raw_material}")
+            return []
+        
+        # Remove duplicates and sort
         suppliers = (
             suppliers_df["اسم المورد"]
             .dropna()
@@ -97,7 +134,6 @@ def create_supplier_multiselect(conn) -> List[str]:
         )
         
         if not suppliers:
-            st.info("لا يوجد موردون متاحون.")
             return []
         
         selected = st.multiselect(
