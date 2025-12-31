@@ -15,7 +15,7 @@ def get_db_connection() -> Client | None:
         supabase_client: Client = create_client(url, key)
         return supabase_client
     except Exception as e:
-        st.error(f"فشل تهيئة عميل Supabase. راجع secrets. الخطأ: {e}")
+        st.error(f"فشل تهيئة عميل Supabase. : {e}")
         return None
 
 
@@ -269,3 +269,9 @@ def fetch_invoices_data(
     except Exception as e:
         st.caption(f"⚠️ خطأ في جلب الفواتير: {e}")
         return pd.DataFrame()
+
+st.markdown("""
+<div>
+    <span class="badge">التوثيق</span>
+</div>
+""", unsafe_allow_html=True)
