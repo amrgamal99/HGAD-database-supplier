@@ -270,8 +270,3 @@ def fetch_invoices_data(
         st.caption(f"⚠️ خطأ في جلب الفواتير: {e}")
         return pd.DataFrame()
 
-st.markdown("""
-<div>
-    <span class="badge">التوثيق</span>
-</div>
-""", unsafe_allow_html=True)
