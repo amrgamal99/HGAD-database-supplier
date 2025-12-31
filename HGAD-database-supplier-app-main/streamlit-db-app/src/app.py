@@ -41,7 +41,7 @@ from components.filters import (
     create_column_search,
     create_raw_material_dropdown
 )
-from helpers.data_helpers import (
+from utils.data_helpers import (
     format_numbers_for_display,
     apply_date_filter,
     apply_column_search,
