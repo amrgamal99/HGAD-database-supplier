@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-from db.connection import fetch_companies, fetch_projects_by_company
-from typing import Optional, Tuple
+from db.connection import fetch_companies, fetch_projects_by_company, fetch_all_suppliers
+from typing import Optional, Tuple, List
 
 # =========================================================
 # Company Dropdown with Search
@@ -73,6 +73,45 @@ def create_project_dropdown(conn, company_name: str) -> Optional[str]:
         index=0 if projects else None,
         placeholder="— اختر المشروع —"
     )
+
+
+# =========================================================
+# Supplier Multiselect Filter
+# =========================================================
+
+def create_supplier_multiselect(conn) -> List[str]:
+    """إنشاء فلتر متعدد الاختيار للموردين"""
+    try:
+        suppliers_df = fetch_all_suppliers(conn)
+        
+        if suppliers_df.empty or "اسم المورد" not in suppliers_df.columns:
+            st.info("لا يوجد موردون متاحون.")
+            return []
+        
+        suppliers = (
+            suppliers_df["اسم المورد"]
+            .dropna()
+            .drop_duplicates()
+            .sort_values()
+            .tolist()
+        )
+        
+        if not suppliers:
+            st.info("لا يوجد موردون متاحون.")
+            return []
+        
+        selected = st.multiselect(
+            "👥 اختر الموردين (اختر واحد أو أكثر، أو اترك فارغاً للكل)",
+            options=suppliers,
+            default=[],
+            placeholder="— اختر الموردين —"
+        )
+        
+        return selected
+        
+    except Exception as e:
+        st.info(f"حدث خطأ أثناء جلب الموردين: {e}")
+        return []
 
 
 # =========================================================

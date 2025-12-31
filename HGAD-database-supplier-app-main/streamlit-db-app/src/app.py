@@ -39,7 +39,8 @@ from components.filters import (
     create_type_dropdown,
     create_date_range,
     create_column_search,
-    create_raw_material_dropdown
+    create_raw_material_dropdown,
+    create_supplier_multiselect
 )
 from utils.data_helpers import (
     format_numbers_for_display,
@@ -219,14 +220,6 @@ button[title="Collapse sidebar"],
   font-size: 22px;
   font-weight: 900;
   color: var(--text);
-}
-
-.badge {
-  background: var(--accent);
-  color: #fff;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-weight: 700;
 }
 
 .date-box {
@@ -601,6 +594,28 @@ def make_pdf_bytes(df: pd.DataFrame, title_line: str) -> bytes:
 
 
 # =========================================================
+# Convert DataFrame column to clickable links
+# =========================================================
+
+def convert_links_to_html(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert رابط نسخة الفاتورة column to clickable HTML links"""
+    df_copy = df.copy()
+    
+    link_col = "رابط نسخة الفاتورة"
+    
+    if link_col in df_copy.columns:
+        def make_link(url):
+            if pd.isna(url) or str(url).strip() == "":
+                return ""
+            url_str = str(url).strip()
+            return f'<a href="{url_str}" target="_blank">🔗 عرض الفاتورة</a>'
+        
+        df_copy[link_col] = df_copy[link_col].apply(make_link)
+    
+    return df_copy
+
+
+# =========================================================
 # Main Application
 # =========================================================
 
@@ -623,10 +638,19 @@ def main():
         st.info("📌 برجاء اختيار الشركة والمشروع ونوع البيانات من القائمة الجانبية.")
         return
     
-    # Date Filters (Main Area)
-    st.markdown('<div class="date-box"><div class="date-row">', unsafe_allow_html=True)
+    # Main Area Filters
+    st.markdown('<div class="date-box">', unsafe_allow_html=True)
+    
+    # Date Filters
+    st.markdown('<div class="date-row">', unsafe_allow_html=True)
     date_from, date_to = create_date_range()
-    st.markdown('</div></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Supplier Filter
+    st.markdown("---")
+    selected_suppliers = create_supplier_multiselect(conn)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Fetch Data based on type
     if type_key == "financial_report":
@@ -636,7 +660,8 @@ def main():
             project_name,
             date_from,
             date_to,
-            raw_material if raw_material != "الكل" else None
+            raw_material if raw_material != "الكل" else None,
+            selected_suppliers if len(selected_suppliers) > 0 else None
         )
         display_name = "التقرير المالي"
     else:  # invoices
@@ -646,7 +671,8 @@ def main():
             project_name,
             date_from,
             date_to,
-            raw_material if raw_material != "الكل" else None
+            raw_material if raw_material != "الكل" else None,
+            selected_suppliers if len(selected_suppliers) > 0 else None
         )
         display_name = "الفواتير"
     
@@ -663,6 +689,10 @@ def main():
             return
     
     # Display Header
+    supplier_info = ""
+    if selected_suppliers and len(selected_suppliers) > 0:
+        supplier_info = f'&nbsp;&nbsp;|&nbsp;&nbsp;<strong>الموردين:</strong> {", ".join(selected_suppliers)}'
+    
     st.markdown(f"""
 <div class="fin-head">
     <div class="line">
@@ -670,8 +700,10 @@ def main():
         &nbsp;&nbsp;|&nbsp;&nbsp;
         <strong>المشروع:</strong> {project_name}
         {f'&nbsp;&nbsp;|&nbsp;&nbsp;<strong>المادة:</strong> {raw_material}' if raw_material != "الكل" else ''}
+        {supplier_info}
+        &nbsp;&nbsp;|&nbsp;&nbsp;
+        <strong>{display_name}</strong>
     </div>
-    <span class="badge">{display_name}</span>
 </div>
 """, unsafe_allow_html=True)
     
@@ -685,7 +717,12 @@ def main():
         errors="ignore"
     )
     
-    st.dataframe(df_display, use_container_width=True, hide_index=True)
+    # Convert links to clickable HTML if column exists
+    df_html = convert_links_to_html(df_display)
+    
+    # Display with HTML rendering for links
+    st.write(df_html.to_html(escape=False, index=False), unsafe_allow_html=True)
+    
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Export Title

@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
-from typing import Optional
+from typing import Optional, List
 
 # =========================================================
 # Supabase Connection
@@ -77,6 +77,21 @@ def fetch_projects_by_company(supabase: Client, company_name: str) -> pd.DataFra
 
 
 # =========================================================
+# Fetch All Suppliers
+# =========================================================
+
+def fetch_all_suppliers(supabase: Client) -> pd.DataFrame:
+    """جلب جميع الموردين"""
+    try:
+        resp = supabase.table("suppliers").select("id, اسم المورد, مواد اوليه").execute()
+        df = pd.DataFrame(resp.data or [])
+        return df
+    except Exception as e:
+        st.caption(f"⚠️ خطأ في جلب الموردين: {e}")
+        return pd.DataFrame(columns=["id", "اسم المورد", "مواد اوليه"])
+
+
+# =========================================================
 # Fetch Suppliers by Raw Material
 # =========================================================
 
@@ -106,7 +121,8 @@ def fetch_financial_report(
     project_name: str,
     date_from=None,
     date_to=None,
-    raw_material: str = None
+    raw_material: str = None,
+    supplier_names: List[str] = None
 ) -> pd.DataFrame:
     """جلب التقرير المالي من الـ VIEW مع إمكانية التصفية"""
     try:
@@ -152,6 +168,23 @@ def fetch_financial_report(
         if df.empty:
             return df
         
+        # Add supplier names by joining with suppliers table
+        if "supplier_id" in df.columns:
+            suppliers_resp = supabase.table("suppliers").select("id, اسم المورد, مواد اوليه").execute()
+            suppliers_df = pd.DataFrame(suppliers_resp.data or [])
+            
+            if not suppliers_df.empty:
+                df = df.merge(
+                    suppliers_df[["id", "اسم المورد", "مواد اوليه"]],
+                    left_on="supplier_id",
+                    right_on="id",
+                    how="left",
+                    suffixes=("", "_supplier")
+                )
+                # Remove duplicate id column from merge
+                if "id_supplier" in df.columns:
+                    df = df.drop(columns=["id_supplier"])
+        
         # Apply date filters
         if date_from or date_to:
             if "تاريخ الفاتورة" in df.columns:
@@ -162,12 +195,12 @@ def fetch_financial_report(
                     df = df[df["تاريخ الفاتورة"] <= pd.to_datetime(date_to)]
         
         # Apply raw material filter if provided
-        if raw_material:
-            # Get supplier IDs for this raw material
-            suppliers_df = fetch_suppliers_by_raw_material(supabase, raw_material)
-            if not suppliers_df.empty:
-                supplier_ids = suppliers_df["id"].tolist()
-                df = df[df["supplier_id"].isin(supplier_ids)]
+        if raw_material and "مواد اوليه" in df.columns:
+            df = df[df["مواد اوليه"] == raw_material]
+        
+        # Apply supplier filter if provided
+        if supplier_names and len(supplier_names) > 0 and "اسم المورد" in df.columns:
+            df = df[df["اسم المورد"].isin(supplier_names)]
         
         return df
         
@@ -186,7 +219,8 @@ def fetch_invoices_data(
     project_name: str,
     date_from=None,
     date_to=None,
-    raw_material: str = None
+    raw_material: str = None,
+    supplier_names: List[str] = None
 ) -> pd.DataFrame:
     """جلب الفواتير الخام مع إمكانية التصفية"""
     try:
@@ -264,9 +298,12 @@ def fetch_invoices_data(
         if raw_material and "مواد اوليه" in df.columns:
             df = df[df["مواد اوليه"] == raw_material]
         
+        # Apply supplier filter
+        if supplier_names and len(supplier_names) > 0 and "اسم المورد" in df.columns:
+            df = df[df["اسم المورد"].isin(supplier_names)]
+        
         return df
         
     except Exception as e:
         st.caption(f"⚠️ خطأ في جلب الفواتير: {e}")
         return pd.DataFrame()
-
