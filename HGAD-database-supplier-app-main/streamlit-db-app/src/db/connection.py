@@ -11,12 +11,56 @@ from typing import Optional
 def get_db_connection() -> Optional[Client]:
     """تهيئة اتصال Supabase واحد يُخزّن في الذاكرة"""
     try:
+        # Check if secrets exist
+        if "supabase_url" not in st.secrets or "supabase_key" not in st.secrets:
+            st.error("❌ لم يتم العثور على معلومات Supabase في ملف secrets.toml")
+            st.info("""
+            📝 **خطوات الإصلاح:**
+            1. أنشئ مجلد `.streamlit` في نفس مستوى ملف `app.py`
+            2. أنشئ ملف `.streamlit/secrets.toml`
+            3. أضف معلومات Supabase:
+            ```toml
+            supabase_url = "https://your-project.supabase.co"
+            supabase_key = "your-anon-key"
+            ```
+            4. أعد تشغيل التطبيق
+            """)
+            return None
+        
         url = st.secrets["supabase_url"]
         key = st.secrets["supabase_key"]
+        
+        # Validate URL format
+        if not url.startswith("https://") or not url.endswith(".supabase.co"):
+            st.error(f"❌ رابط Supabase غير صحيح: {url}")
+            st.info("يجب أن يكون بصيغة: https://xxxxx.supabase.co")
+            return None
+        
+        # Create client
         supabase_client: Client = create_client(url, key)
+        
+        # Test connection
+        try:
+            supabase_client.table("companies").select("id").limit(1).execute()
+            st.success("✅ تم الاتصال بقاعدة البيانات بنجاح!")
+        except Exception as test_error:
+            st.error(f"❌ فشل الاتصال بقاعدة البيانات: {test_error}")
+            st.info("""
+            🔍 **تحقق من:**
+            - صحة الـ `supabase_url` و `supabase_key`
+            - وجود جدول `companies` في قاعدة البيانات
+            - صلاحيات الـ API Key
+            """)
+            return None
+        
         return supabase_client
+        
+    except KeyError as e:
+        st.error(f"❌ مفتاح مفقود في secrets: {e}")
+        return None
     except Exception as e:
-        st.error(f"فشل الاتصال بـ Supabase: {e}")
+        st.error(f"❌ خطأ غير متوقع: {e}")
+        st.exception(e)
         return None
 
 
