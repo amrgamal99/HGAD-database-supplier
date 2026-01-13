@@ -196,7 +196,6 @@ def create_type_dropdown() -> Tuple[str, str]:
     """إنشاء قائمة منسدلة لنوع البيانات"""
     display_to_key = {
         "📊 تقرير مالي (Financial Report)": "financial_report",
-        "📄 فواتير (Invoices)": "invoices",
     }
     
     display_list = list(display_to_key.keys())
