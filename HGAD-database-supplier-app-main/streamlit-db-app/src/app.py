@@ -242,62 +242,64 @@ button[title="Collapse sidebar"],
   font-size: 22px;
 }
 
-/* Beautiful full-width table styling */
-.dataframe-container table {
+/* Improved Streamlit dataframe styling */
+[data-testid="stDataFrame"] {
   width: 100% !important;
-  border-collapse: collapse !important;
-  margin: 0 !important;
-  font-size: 14px !important;
 }
 
-.dataframe-container thead {
-  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
+[data-testid="stDataFrame"] > div {
+  width: 100% !important;
+}
+
+[data-testid="stDataFrame"] table {
+  width: 100% !important;
+  table-layout: auto !important;
+}
+
+[data-testid="stDataFrame"] thead tr th {
   position: sticky !important;
   top: 0 !important;
-  z-index: 10 !important;
-}
-
-.dataframe-container thead th {
-  padding: 14px 12px !important;
+  z-index: 2 !important;
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
   color: #ffffff !important;
   font-weight: 800 !important;
   text-align: center !important;
   border: 1px solid rgba(255,255,255,0.1) !important;
-  font-size: 15px !important;
+  font-size: 14px !important;
+  padding: 12px 8px !important;
   white-space: nowrap !important;
 }
 
-.dataframe-container tbody tr {
-  transition: all 0.2s ease !important;
+[data-testid="stDataFrame"] tbody tr {
+  transition: background 0.2s ease !important;
 }
 
-.dataframe-container tbody tr:nth-child(even) {
+[data-testid="stDataFrame"] tbody tr:nth-child(even) {
   background: rgba(255,255,255,0.02) !important;
 }
 
-.dataframe-container tbody tr:hover {
+[data-testid="stDataFrame"] tbody tr:hover {
   background: #1a2744 !important;
-  transform: scale(1.001) !important;
 }
 
-.dataframe-container tbody td {
-  padding: 12px !important;
+[data-testid="stDataFrame"] tbody td {
+  padding: 10px 8px !important;
   border: 1px solid var(--line) !important;
   text-align: center !important;
   color: var(--text) !important;
+  font-size: 13px !important;
+  white-space: nowrap !important;
 }
 
-.dataframe-container tbody td a {
+/* Link styling in dataframe */
+[data-testid="stDataFrame"] a {
   color: #60a5fa !important;
   text-decoration: none !important;
   font-weight: 600 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 4px !important;
   transition: all 0.2s ease !important;
 }
 
-.dataframe-container tbody td a:hover {
+[data-testid="stDataFrame"] a:hover {
   color: #93c5fd !important;
   text-decoration: underline !important;
 }
@@ -305,6 +307,23 @@ button[title="Collapse sidebar"],
 .hsec, h1, h3 {
   text-align: right !important;
   direction: rtl !important;
+}
+
+/* Download buttons styling */
+[data-testid="stDownloadButton"] button {
+  width: 100% !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
+  border: none !important;
+  color: white !important;
+  padding: 12px 20px !important;
+  transition: all 0.2s ease !important;
+}
+
+[data-testid="stDownloadButton"] button:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4) !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -441,7 +460,7 @@ def _write_excel_table(ws, workbook, df: pd.DataFrame, start_row: int, start_col
 
     # Add sum row for numeric columns
     sum_row_idx = r0 + 1 + len(df)
-    exclude_keywords = ['id', 'رقم', 'تاريخ', 'date', 'code', 'كود', 'بنك', 'bank', 'نوع', 'type', 'رابط']
+    exclude_keywords = ['id', 'رقم', 'تاريخ', 'date', 'code', 'كود', 'بنك', 'bank', 'نوع', 'type', 'رابط', 'مورد', 'مواد']
     
     if len(df.columns) > 0:
         ws.write(sum_row_idx, c0, "المجموع", hdr_fmt)
@@ -775,28 +794,6 @@ def make_pdf_bytes(df: pd.DataFrame, title_line: str) -> bytes:
 
 
 # =========================================================
-# Convert DataFrame column to clickable links
-# =========================================================
-
-def convert_links_to_html(df: pd.DataFrame) -> pd.DataFrame:
-    """تحويل عمود روابط الفاتورة إلى روابط HTML قابلة للنقر"""
-    df_copy = df.copy()
-    
-    link_col = "رابط نسخة الفاتورة"
-    
-    if link_col in df_copy.columns:
-        def make_link(url):
-            if pd.isna(url) or str(url).strip() == "":
-                return ""
-            url_str = str(url).strip()
-            return f'<a href="{url_str}" target="_blank">🔗 عرض الفاتورة</a>'
-        
-        df_copy[link_col] = df_copy[link_col].apply(make_link)
-    
-    return df_copy
-
-
-# =========================================================
 # Main Application
 # =========================================================
 
@@ -861,6 +858,15 @@ def main():
         st.warning("⚠️ لا توجد بيانات مطابقة للاختيارات المحددة.")
         return
     
+    # Apply filters to dataframe (مواد اوليه and اسم المورد)
+    if raw_material and raw_material != "الكل":
+        if "مواد اوليه" in df.columns:
+            df = df[df["مواد اوليه"] == raw_material]
+    
+    if selected_suppliers and len(selected_suppliers) > 0:
+        if "اسم المورد" in df.columns:
+            df = df[df["اسم المورد"].isin(selected_suppliers)]
+    
     # Column Search
     search_col, search_term = create_column_search(df)
     if search_col and search_term:
@@ -884,7 +890,7 @@ def main():
     # Remove columns where ALL values are NaN
     df_display = df_display.dropna(axis=1, how='all')
     
-    # Reorder columns for financial report
+    # Reorder columns - ALWAYS show مواد اوليه and اسم المورد first
     if type_key == "financial_report":
         desired_order = [
             "مواد اوليه",
@@ -903,7 +909,7 @@ def main():
         remaining_cols = [col for col in df_display.columns if col not in ordered_cols]
         df_display = df_display[ordered_cols + remaining_cols]
     
-    # Reorder columns for invoices
+    # Reorder columns for invoices - ALWAYS show مواد اوليه and اسم المورد first
     if type_key == "invoices":
         desired_order = [
             "مواد اوليه",
@@ -918,15 +924,30 @@ def main():
         remaining_cols = [col for col in df_display.columns if col not in ordered_cols]
         df_display = df_display[ordered_cols + remaining_cols]
     
-    # Convert links to clickable HTML
-    df_html = convert_links_to_html(df_display)
+    # Configure column display with proper widths and link columns
+    column_config = {}
     
-    # Display with HTML rendering
-    st.markdown('<div class="dataframe-container">', unsafe_allow_html=True)
-    st.write(df_html.to_html(escape=False, index=False), unsafe_allow_html=True)
+    # Set link columns to display as clickable links
+    for col in df_display.columns:
+        if "رابط" in str(col):
+            column_config[col] = st.column_config.LinkColumn(
+                label=col,
+                display_text="🔗 عرض الفاتورة"
+            )
+    
+    # Display dataframe with proper configuration
+    st.dataframe(
+        df_display,
+        column_config=column_config,
+        use_container_width=True,
+        hide_index=True,
+        height=600  # Fixed height for better scrolling
+    )
+    
     st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Show data summary
+    st.markdown(f"**إجمالي الصفوف:** {len(df_display)}")
     
     # Export Title
     title_export = compose_export_title(
@@ -949,7 +970,8 @@ def main():
                 "📊 تنزيل Excel",
                 xlsx_bytes,
                 file_name=safe_filename(f"{display_name}_{company_name}_{project_name}.xlsx"),
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
             )
     
     with col2:
@@ -959,7 +981,8 @@ def main():
             "📑 تنزيل PDF",
             pdf_bytes,
             file_name=safe_filename(f"{display_name}_{company_name}_{project_name}.pdf"),
-            mime="application/pdf"
+            mime="application/pdf",
+            use_container_width=True
         )
 
 
