@@ -338,7 +338,7 @@ with c_title:
 st.markdown('<hr class="hr-accent"/>', unsafe_allow_html=True)
 
 # =========================================================
-# Excel Export Functions
+# Excel Export Functions (ENHANCED)
 # =========================================================
 
 def _pick_excel_engine() -> Optional[str]:
@@ -355,41 +355,198 @@ def _pick_excel_engine() -> Optional[str]:
         return None
 
 
+def _estimate_col_widths_chars(df: pd.DataFrame) -> List[float]:
+    """تقدير عرض الأعمدة بالأحرف"""
+    widths = []
+    for col in df.columns:
+        series = df[col]
+        max_len = max([len(str(col))] + [len(str(v)) for v in series.values])
+        widths.append(min(max_len + 4, 60))
+    return widths
+
+
+def _chars_to_pixels(chars: float) -> float:
+    """تحويل الأحرف إلى بكسلات (≈7.2 px per char)"""
+    return chars * 7.2
+
+
+def _insert_wide_logo(ws, df: pd.DataFrame, start_row: int, start_col: int = 0) -> int:
+    """
+    إدراج الشعار العريض ليغطي عرض الجدول كاملاً
+    يُرجع رقم الصف التالي للعنوان
+    """
+    wlp = _wide_logo_path()
+    if not wlp:
+        return start_row
+
+    widths_chars = _estimate_col_widths_chars(df)
+    total_width_px = _chars_to_pixels(sum(widths_chars))
+
+    try:
+        img_w_px, img_h_px = _image_size(wlp)
+        if img_w_px <= 0:
+            img_w_px = 1000
+        x_scale = max(0.1, total_width_px / float(img_w_px))
+        y_scale = x_scale  # keep aspect ratio
+        ws.insert_image(
+            start_row, start_col, str(wlp),
+            {"x_scale": x_scale, "y_scale": y_scale, "object_position": 2}
+        )
+        scaled_h_px = img_h_px * y_scale
+        ws.set_row(start_row, int(scaled_h_px * 0.75))  # px→pt approx
+        return start_row + 1
+    except Exception:
+        ws.set_row(start_row, 80)
+        ws.insert_image(start_row, start_col, str(wlp), {"x_scale": 0.5, "y_scale": 0.5, "object_position": 2})
+        return start_row + 1
+
+
+def _write_excel_table(ws, workbook, df: pd.DataFrame, start_row: int, start_col: int) -> Tuple[int, int, int, int]:
+    """كتابة DataFrame كجدول Excel منسق مع روابط قابلة للنقر"""
+    hdr_fmt = workbook.add_format({"align": "right", "bold": True, "bg_color": "#1E3A8A", "font_color": "white"})
+    fmt_text = workbook.add_format({"align": "right"})
+    fmt_date = workbook.add_format({"align": "right", "num_format": "yyyy-mm-dd"})
+    fmt_num = workbook.add_format({"align": "right", "num_format": "#,##0.00"})
+    fmt_link = workbook.add_format({"font_color": "blue", "underline": 1, "align": "right"})
+
+    r0, c0 = start_row, start_col
+
+    # Headers
+    for j, col in enumerate(df.columns):
+        ws.write(r0, c0 + j, col, hdr_fmt)
+
+    # Body
+    for i in range(len(df)):
+        for j, col in enumerate(df.columns):
+            val = df.iloc[i, j]
+            colname = str(col)
+            sval = "" if pd.isna(val) else str(val)
+            
+            # Check if this is a URL column
+            if sval.startswith(("http://", "https://")) or ("رابط" in colname and sval):
+                ws.write_url(r0 + 1 + i, c0 + j, sval, fmt_link, string="فتح الرابط")
+            else:
+                if pd.api.types.is_datetime64_any_dtype(df[col]):
+                    if pd.notna(val):
+                        ws.write_datetime(r0 + 1 + i, c0 + j, pd.to_datetime(val), fmt_date)
+                    else:
+                        ws.write_blank(r0 + 1 + i, c0 + j, None, fmt_text)
+                elif pd.api.types.is_numeric_dtype(df[col]):
+                    if pd.notna(val):
+                        ws.write_number(r0 + 1 + i, c0 + j, float(val), fmt_num)
+                    else:
+                        ws.write_blank(r0 + 1 + i, c0 + j, None, fmt_text)
+                else:
+                    ws.write(r0 + 1 + i, c0 + j, sval, fmt_text)
+
+    # Add sum row for numeric columns
+    sum_row_idx = r0 + 1 + len(df)
+    exclude_keywords = ['id', 'رقم', 'تاريخ', 'date', 'code', 'كود', 'بنك', 'bank', 'نوع', 'type', 'رابط']
+    
+    if len(df.columns) > 0:
+        ws.write(sum_row_idx, c0, "المجموع", hdr_fmt)
+    
+    for j, col in enumerate(df.columns):
+        if j == 0:
+            continue
+            
+        col_lower = str(col).lower()
+        should_exclude = any(keyword in col_lower for keyword in exclude_keywords)
+        
+        if not should_exclude:
+            try:
+                numeric_col = pd.to_numeric(df[col], errors='coerce')
+                if not numeric_col.isna().all():
+                    s = numeric_col.sum()
+                    if not pd.isna(s) and abs(s) > 0.001:
+                        ws.write(sum_row_idx, c0 + j, s, fmt_num)
+                    else:
+                        ws.write(sum_row_idx, c0 + j, "", fmt_text)
+                else:
+                    ws.write(sum_row_idx, c0 + j, "", fmt_text)
+            except Exception:
+                ws.write(sum_row_idx, c0 + j, "", fmt_text)
+        else:
+            ws.write(sum_row_idx, c0 + j, "", fmt_text)
+
+    # Add count row
+    count_row_idx = sum_row_idx + 1
+    if len(df.columns) > 0:
+        ws.write(count_row_idx, c0, "عدد الصفوف", hdr_fmt)
+    
+    if len(df.columns) > 1:
+        total_rows = len(df)
+        ws.write(count_row_idx, c0 + 1, total_rows, fmt_text)
+        for j in range(len(df.columns)):
+            if j == 0 or j == 1:
+                continue
+            ws.write(count_row_idx, c0 + j, "", fmt_text)
+
+    r1 = count_row_idx
+    c1 = c0 + len(df.columns) - 1
+
+    # Add Excel table
+    ws.add_table(r0, c0, r1, c1, {
+        "style": "Table Style Medium 9",
+        "columns": [{"header": str(c)} for c in df.columns]
+    })
+    ws.freeze_panes(r0 + 1, c0)
+
+    # Set column widths
+    widths_chars = _estimate_col_widths_chars(df)
+    for j, w in enumerate(widths_chars):
+        ws.set_column(c0 + j, c0 + j, w)
+
+    return r0, c0, r1, c1
+
+
 def make_excel_bytes(
     df: pd.DataFrame,
     sheet_name: str,
-    title_line: str
+    title_line: str,
+    put_logo: bool = True
 ) -> Optional[bytes]:
-    """إنشاء ملف Excel مع تنسيق وروابط قابلة للنقر"""
+    """إنشاء ملف Excel مع تنسيق احترافي وروابط قابلة للنقر"""
     engine = _pick_excel_engine()
     if engine is None:
         return None
     
     buf = BytesIO()
     
-    # Check if we have xlsxwriter (supports hyperlinks better)
     if engine == "xlsxwriter":
         with pd.ExcelWriter(buf, engine=engine) as writer:
-            df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+            wb = writer.book
+            safe_name = (sheet_name or "Sheet1")[:31]
+            ws = wb.add_worksheet(safe_name)
+            writer.sheets[safe_name] = ws
+
+            cur_row = 0
             
-            workbook = writer.book
-            worksheet = writer.sheets[sheet_name[:31]]
-            
-            # Add hyperlink format
-            link_format = workbook.add_format({
-                'font_color': 'blue',
-                'underline': 1
+            # Logo
+            if put_logo:
+                cur_row = _insert_wide_logo(ws, df, start_row=cur_row, start_col=0)
+
+            # Title
+            ncols = max(1, len(df.columns))
+            title_fmt = wb.add_format({
+                "bold": True,
+                "align": "center",
+                "valign": "vcenter",
+                "font_size": 16,
+                "bg_color": "#f0f0f0"
             })
-            
-            # Find the column index for رابط نسخة الفاتورة
-            if "رابط نسخة الفاتورة" in df.columns:
-                link_col_idx = df.columns.get_loc("رابط نسخة الفاتورة")
-                
-                # Add hyperlinks for each row
-                for row_idx, url in enumerate(df["رابط نسخة الفاتورة"], start=1):
-                    if pd.notna(url) and str(url).strip():
-                        url_str = str(url).strip()
-                        worksheet.write_url(row_idx, link_col_idx, url_str, link_format, string="عرض الفاتورة")
+            ws.merge_range(cur_row, 0, cur_row, ncols - 1, title_line, title_fmt)
+            ws.set_row(cur_row, 28)
+            cur_row += 1
+
+            # One blank row
+            ws.set_row(cur_row, 16)
+            cur_row += 1
+
+            # Table
+            _write_excel_table(ws, wb, df, start_row=cur_row, start_col=0)
+            ws.set_zoom(115)
+            ws.set_margins(left=0.3, right=0.3, top=0.5, bottom=0.5)
     else:
         # Fallback for openpyxl
         with pd.ExcelWriter(buf, engine=engine) as writer:
@@ -405,11 +562,11 @@ def make_csv_utf8(df: pd.DataFrame) -> bytes:
 
 
 # =========================================================
-# PDF Export Functions
+# PDF Export Functions (ENHANCED)
 # =========================================================
 
 def _pdf_header_elements(title_line: str) -> Tuple[List, float]:
-    """إنشاء عناصر رأس PDF"""
+    """إنشاء عناصر رأس PDF مع الشعار"""
     font_name, arabic_ok = register_arabic_font()
     page = landscape(A4)
     left, right, top, bottom = 14, 14, 18, 14
@@ -461,7 +618,7 @@ def _pdf_table(
     font_size: float = 8.0,
     avail_width: Optional[float] = None
 ) -> list:
-    """إنشاء جدول PDF منسق"""
+    """إنشاء جدول PDF منسق مع روابط قابلة للنقر"""
     font_name, _ = register_arabic_font()
     
     hdr_style = ParagraphStyle(
@@ -489,6 +646,15 @@ def _pdf_table(
         leading=font_size + 1.5,
         alignment=0,
         textColor=colors.black
+    )
+    
+    link_style = ParagraphStyle(
+        name="Link",
+        fontName=font_name,
+        fontSize=font_size,
+        alignment=2,
+        textColor=colors.HexColor("#1a56db"),
+        underline=True
     )
     
     blocks = []
@@ -521,13 +687,10 @@ def _pdf_table(
             sval = "" if pd.isna(r[c]) else str(r[c])
             
             # Check if this is a URL column and has a valid URL
-            if c == "رابط نسخة الفاتورة" and sval and sval.strip() and sval.startswith("http"):
+            if sval.startswith(("http://", "https://")) or ("رابط" in str(c) and sval):
                 # Create clickable link in PDF
-                link_text = "عرض الفاتورة"
-                link_html = f'<link href="{sval}" color="blue"><u>{link_text}</u></link>'
-                cells.append(
-                    Paragraph(link_html, cell_rtl)
-                )
+                link_html = f'<link href="{sval}">{shape_arabic("فتح الرابط")}</link>'
+                cells.append(Paragraph(link_html, link_style))
             else:
                 # Regular cell
                 is_ar = looks_arabic(sval)
@@ -553,17 +716,17 @@ def _pdf_table(
     
     table = Table(rows, repeatRows=1, colWidths=col_widths)
     table.setStyle(TableStyle([
-        ("FONTNAME", (0,0), (-1,-1), font_name),
-        ("FONTSIZE", (0,0), (-1,-1), font_size),
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1E3A8A")),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("LEFTPADDING", (0,0), (-1,-1), 3),
-        ("RIGHTPADDING", (0,0), (-1,-1), 3),
-        ("TOPPADDING", (0,0), (-1,-1), 2),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
-        ("GRID", (0,0), (-1,-1), 0.35, colors.HexColor("#cbd5e1")),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1), [
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("FONTSIZE", (0, 0), (-1, -1), font_size),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
             colors.white,
             colors.HexColor("#f7fafc")
         ]),
@@ -574,7 +737,7 @@ def _pdf_table(
 
 
 def make_pdf_bytes(df: pd.DataFrame, title_line: str) -> bytes:
-    """إنشاء ملف PDF"""
+    """إنشاء ملف PDF احترافي مع شعار وتنسيق"""
     page = landscape(A4)
     left, right, top, bottom = 14, 14, 18, 14
     buf = BytesIO()
@@ -616,7 +779,7 @@ def make_pdf_bytes(df: pd.DataFrame, title_line: str) -> bytes:
 # =========================================================
 
 def convert_links_to_html(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert رابط نسخة الفاتورة column to clickable HTML links"""
+    """تحويل عمود روابط الفاتورة إلى روابط HTML قابلة للنقر"""
     df_copy = df.copy()
     
     link_col = "رابط نسخة الفاتورة"
@@ -723,7 +886,6 @@ def main():
     
     # Reorder columns for financial report
     if type_key == "financial_report":
-        # Define desired order
         desired_order = [
             "مواد اوليه",
             "اسم المورد",
@@ -737,16 +899,12 @@ def main():
             "مجموع الكمية لكل مشروع ومورد",
             "مجموع المبلغ لكل مشروع ومورد"
         ]
-        
-        # Reorder columns that exist in df_display
         ordered_cols = [col for col in desired_order if col in df_display.columns]
-        # Add any remaining columns not in desired_order
         remaining_cols = [col for col in df_display.columns if col not in ordered_cols]
         df_display = df_display[ordered_cols + remaining_cols]
     
     # Reorder columns for invoices
     if type_key == "invoices":
-        # Define desired order for invoices
         desired_order = [
             "مواد اوليه",
             "اسم المورد",
@@ -756,17 +914,14 @@ def main():
             "الكمية",
             "رابط نسخة الفاتورة"
         ]
-        
-        # Reorder columns that exist in df_display
         ordered_cols = [col for col in desired_order if col in df_display.columns]
-        # Add any remaining columns not in desired_order
         remaining_cols = [col for col in df_display.columns if col not in ordered_cols]
         df_display = df_display[ordered_cols + remaining_cols]
     
-    # Convert links to clickable HTML if column exists
+    # Convert links to clickable HTML
     df_html = convert_links_to_html(df_display)
     
-    # Display with HTML rendering for links in a styled container
+    # Display with HTML rendering
     st.markdown('<div class="dataframe-container">', unsafe_allow_html=True)
     st.write(df_html.to_html(escape=False, index=False), unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -782,19 +937,13 @@ def main():
         date_to
     )
     
-    # Download Buttons (Excel and PDF only)
+    # Download Buttons
     st.markdown("### 📥 تنزيل البيانات")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        # Prepare Excel with clickable links
-        df_excel = df_display.copy()
-        if "رابط نسخة الفاتورة" in df_excel.columns:
-            # Keep actual URLs for Excel (Excel supports hyperlinks)
-            pass
-        
-        xlsx_bytes = make_excel_bytes(df_excel, "البيانات", title_export)
+        xlsx_bytes = make_excel_bytes(df_display, "البيانات", title_export, put_logo=True)
         if xlsx_bytes:
             st.download_button(
                 "📊 تنزيل Excel",
@@ -804,7 +953,6 @@ def main():
             )
     
     with col2:
-        # Prepare PDF with URLs shown as text
         pdf_df = format_numbers_for_display(df_display)
         pdf_bytes = make_pdf_bytes(pdf_df, title_export)
         st.download_button(
