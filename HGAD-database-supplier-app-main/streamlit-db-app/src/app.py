@@ -830,7 +830,7 @@ def main():
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Fetch Data based on type
+    # Fetch Data based on type WITHOUT applying filters initially
     if type_key == "financial_report":
         df = fetch_financial_report(
             conn,
@@ -838,8 +838,8 @@ def main():
             project_name,
             date_from,
             date_to,
-            raw_material if raw_material != "الكل" else None,
-            selected_suppliers if len(selected_suppliers) > 0 else None
+            None,  # Don't pass raw_material to query
+            None   # Don't pass suppliers to query
         )
         display_name = "التقرير المالي"
     else:  # invoices
@@ -849,8 +849,8 @@ def main():
             project_name,
             date_from,
             date_to,
-            raw_material if raw_material != "الكل" else None,
-            selected_suppliers if len(selected_suppliers) > 0 else None
+            None,  # Don't pass raw_material to query
+            None   # Don't pass suppliers to query
         )
         display_name = "الفواتير"
     
@@ -858,14 +858,37 @@ def main():
         st.warning("⚠️ لا توجد بيانات مطابقة للاختيارات المحددة.")
         return
     
-    # Apply filters to dataframe (مواد اوليه and اسم المورد)
+    # Apply filters to dataframe AFTER fetching data
+    # Filter by raw material (مواد اوليه)
     if raw_material and raw_material != "الكل":
-        if "مواد اوليه" in df.columns:
-            df = df[df["مواد اوليه"] == raw_material]
+        # Check if column exists in dataframe
+        possible_col_names = ["مواد اوليه", "مواد أوليه", "المواد الأولية", "raw_material"]
+        material_col = None
+        for col_name in possible_col_names:
+            if col_name in df.columns:
+                material_col = col_name
+                break
+        
+        if material_col:
+            df = df[df[material_col] == raw_material]
     
+    # Filter by suppliers (اسم المورد)
     if selected_suppliers and len(selected_suppliers) > 0:
-        if "اسم المورد" in df.columns:
-            df = df[df["اسم المورد"].isin(selected_suppliers)]
+        # Check if column exists in dataframe
+        possible_col_names = ["اسم المورد", "اسم المورّد", "المورد", "supplier_name"]
+        supplier_col = None
+        for col_name in possible_col_names:
+            if col_name in df.columns:
+                supplier_col = col_name
+                break
+        
+        if supplier_col:
+            df = df[df[supplier_col].isin(selected_suppliers)]
+    
+    # Check if dataframe is empty after filtering
+    if df.empty:
+        st.warning("⚠️ لا توجد بيانات مطابقة للتصفية المحددة.")
+        return
     
     # Column Search
     search_col, search_term = create_column_search(df)
